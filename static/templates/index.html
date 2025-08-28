@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Passport OCR — загрузка документа</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='styles/index.css') }}">
+    <script src="{{ url_for('static', path='scripts/main.js') }}" defer></script>
+</head>
+
+<body>
+    <header class="site-header">
+        <div class="container header-inner">
+            <div class="brand">
+                <div class="logo" aria-hidden="true">🔍</div>
+                <h1>Passport OCR</h1>
+            </div>
+            <nav class="nav">
+                <span class="version">Прототип</span>
+            </nav>
+        </div>
+    </header>
+    <main class="container main-layout" role="main">
+        <section class="panel upload-panel">
+            <h2>Загрузить фото документа</h2>
+            <div class="uploader" aria-label="Зона загрузки">
+                <div class="upload-drop">
+                    <p class="upload-icon">📁</p>
+                    <p class="upload-title">Перетащи фото сюда или выбери файл</p>
+                    <p class="upload-hint">Поддерживаемые форматы: JPG, PNG, HEIC.
+                        Максимум 20 МБ. Рекомендуемая короткая сторона ≥ 1000 px.</p>
+                    <label class="file-input-label">
+                        <!-- расширенный accept: расширения + стандартные mime -->
+                        <input type="file" accept=".jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png" id="file" name="file">
+                        Выбрать файл
+                    </label>
+                </div>
+                <div class="doc-type">
+                    <label for="doc-select">Автоопределение типа документа:</label>
+                    <select id="doc-select" name="doc_type">
+                        <option value="auto" selected>Авто (внутренний/загран)</option>
+                        <option value="internal">Паспорт РФ (внутренний)</option>
+                        <option value="foreign">Загранпаспорт РФ</option>
+                    </select>
+                </div>
+                <div class="preview">
+                    <div class="preview-label">Превью:</div>
+                    <div class="preview-box" aria-live="polite">
+                        <div class="preview-placeholder">Фото не загружено</div>
+                        <!-- при функционале сюда будет вставляться <img> -->
+                    </div>
+
+                    <!-- Новые элементы: контролы заполнения и индикатор загрузки (ниже превью) -->
+                    <div class="fill-controls">
+                        <button id="fill-btn" class="btn primary" type="button" aria-haspopup="false">Распознать</button>
+
+                        <!-- Индикатор загрузки; по умолчанию скрыт (атрибут hidden) -->
+                        <div id="fill-loading" class="loading" aria-live="polite" hidden>
+                            <span class="spinner" aria-hidden="true"></span>
+                            <span class="loading-text">Распознавание изображения…</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="processing-hint">
+                    <strong>Примечание:</strong> После распознавания исходные
+                    изображения будут удалены через 3 минуты.
+                </div>
+            </div>
+        </section>
+        <section class="panel form-panel">
+        <h2>Предзаполненная форма</h2>
+
+        <form class="passport-form" novalidate>
+            <!-- Вкладки для выбора типа документа -->
+            <div class="group tabs-group" role="tablist" aria-label="Выбор типа документа">
+            <div class="tabs">
+                <button
+                type="button"
+                id="tab-btn-passport"
+                class="tab tab--active"
+                role="tab"
+                aria-selected="true"
+                aria-controls="tab-panel-passport"
+                data-tab="passport"
+                >
+                Паспорт
+                </button>
+                <button
+                type="button"
+                id="tab-btn-foreign"
+                class="tab"
+                role="tab"
+                aria-selected="false"
+                aria-controls="tab-panel-foreign"
+                data-tab="foreign"
+                >
+                Загранпаспорт
+                </button>
+            </div>
+
+            <!-- Панели вкладок -->
+            <div class="tab-panels">
+                <!-- Панель: Паспорт -->
+                <div
+                id="tab-panel-passport"
+                class="tab-panel tab-panel--active"
+                role="tabpanel"
+                aria-labelledby="tab-btn-passport"
+                aria-hidden="false"
+                >
+                    <!-- Общие данные -->
+                    <fieldset class="group inner">
+                    <legend>Общие данные</legend>
+
+                    <div class="row two-cols">
+                        <label class="field">
+                        <span class="label">Фамилия</span>
+                        <input type="text" name="passport_surname" placeholder="Иванов" />
+                        </label>
+                        <label class="field">
+                        <span class="label">Имя</span>
+                        <input type="text" name="passport_name" placeholder="Иван" />
+                        </label>
+                    </div>
+
+                    <div class="row two-cols">
+                        <label class="field">
+                        <span class="label">Отчество</span>
+                        <input type="text" name="passport_patronymic" placeholder="Иванович (если есть)" />
+                        </label>
+                        <label class="field">
+                        <span class="label">Пол</span>
+                        <select name="passport_sex">
+                            <option value="">—</option>
+                            <option value="M">М</option>
+                            <option value="F">Ж</option>
+                        </select>
+                        </label>
+                    </div>
+
+                    <label class="field">
+                        <span class="label">Дата рождения</span>
+                        <input type="text" name="passport_birth_date" placeholder="ДД.ММ.ГГГГ" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Место рождения</span>
+                        <input type="text" name="passport_birth_place" placeholder="Как в документе" />
+                    </label>
+                    </fieldset>
+
+                    <!-- Данные паспорта -->
+                    <fieldset class="group inner">
+                    <legend>Данные паспорта</legend>
+
+                    <div class="row two-cols">
+                        <label class="field">
+                        <span class="label">Серия</span>
+                        <input type="text" name="passport_series" placeholder="1234" maxlength="4" />
+                        </label>
+                        <label class="field">
+                        <span class="label">Номер</span>
+                        <input type="text" name="passport_number" placeholder="123456" maxlength="6" />
+                        </label>
+                    </div>
+
+                    <div class="row two-cols">
+                        <label class="field">
+                        <span class="label">Дата выдачи</span>
+                        <input type="text" name="passport_issue_date" placeholder="ДД.ММ.ГГГГ" />
+                        </label>
+                        <label class="field">
+                        <span class="label">Код подразделения</span>
+                        <input type="text" name="passport_department_code" placeholder="000-000" />
+                        </label>
+                    </div>
+
+                    <label class="field">
+                        <span class="label">Кем выдан</span>
+                        <input type="text" name="passport_issued_by" placeholder="Название органа" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Гражданство</span>
+                        <input type="text" name="passport_citizenship" placeholder="Российская Федерация" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">MRZ (если есть)</span>
+                        <textarea name="passport_mrz" rows="2" placeholder="Машиночитаемая зона (новый паспорт)"></textarea>
+                    </label>
+                    </fieldset>
+                </div>
+
+                <!-- Панель: Загранпаспорт -->
+                <div
+                id="tab-panel-foreign"
+                class="tab-panel"
+                role="tabpanel"
+                aria-labelledby="tab-btn-foreign"
+                aria-hidden="true"
+                hidden
+                >
+                <fieldset class="group inner">
+                    <legend>Данные загранпаспорта</legend>
+
+                    <label class="field">
+                        <span class="label">Тип документа</span>
+                        <input type="text" name="foreign_doc_type" placeholder="P" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Код государства</span>
+                        <input type="text" name="foreign_country_code" placeholder="RUS" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Гражданство</span>
+                        <input type="text" name="foreign_citizenship" placeholder="RUS" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Фамилия / Имя (латиница)</span>
+                        <input type="text" name="foreign_latin_name" placeholder="IVANOV IVAN" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Дата рождения</span>
+                        <input type="text" name="foreign_birth_date" placeholder="ДД.ММ.ГГГГ" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Пол</span>
+                        <select name="foreign_sex">
+                        <option value="M">Мужской</option>
+                        <option value="F">Женский</option>
+                        </select>
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Место рождения</span>
+                        <input type="text" name="foreign_birth_place" placeholder="Место рождения" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Номер документа</span>
+                        <input type="text" name="foreign_number" placeholder="XXXXXXX" />
+                    </label>
+
+                    <div class="row two-cols">
+                        <label class="field">
+                        <span class="label">Дата выдачи</span>
+                        <input type="text" name="foreign_issue_date" placeholder="ДД.ММ.ГГГГ" />
+                        </label>
+                        <label class="field">
+                        <span class="label">Срок действия</span>
+                        <input type="text" name="foreign_expiry_date" placeholder="ДД.ММ.ГГГГ" />
+                        </label>
+                    </div>
+
+                    <label class="field">
+                        <span class="label">Орган, выдавший документ</span>
+                        <input type="text" name="foreign_issued_by" placeholder="Орган, выдавший" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">MRZ (2 строки)</span>
+                        <textarea name="foreign_mrz" rows="2" placeholder="MRZ будет показан здесь при распознавании"></textarea>
+                    </label>
+                </fieldset>
+                </div>
+            </div>
+            </div>
+
+            <!-- Действия формы -->
+            <div class="form-actions">
+            <button type="reset" class="btn primary">Сбросить</button>
+            </div>
+        </form>
+        </section>
+    </main>
+    <footer class="site-footer">
+        <div class="container">
+            <small>Демо-версия — все данные в примере не сохраняются. Исходные
+                изображения удаляются через 3 минуты после обработки.</small>
+        </div>
+    </footer>
+</body>
+
+</html>

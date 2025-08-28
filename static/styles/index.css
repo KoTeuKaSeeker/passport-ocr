@@ -1,0 +1,341 @@
+:root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --accent: #2563eb; /* синий */
+    --muted: #6b7280;
+    --radius: 12px;
+    --gap: 16px;
+}
+
+/* Базовые правила */
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Inter, Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: #111827;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.site-header {
+    background: linear-gradient(90deg, #111827 0%, #1f2937 100%);
+    color: #fff;
+}
+
+.header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* исправлено */
+    padding: 12px 20px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.brand h1 {
+    font-size: 18px;
+    margin: 0;
+}
+
+.logo {
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+}
+
+.version {
+    opacity: 0.9;
+    font-size: 13px;
+}
+
+/* Лэйаут */
+.main-layout {
+    display: flex;
+    gap: var(--gap);
+    padding: 28px 0;
+    align-items: flex-start; /* исправлено */
+}
+
+.panel {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+    padding: 18px;
+    flex: 1;
+}
+
+.upload-panel {
+    flex: 0 0 42%;
+}
+
+.form-panel {
+    flex: 1;
+}
+
+/* Загрузчик */
+.uploader {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.upload-drop {
+    border: 2px dashed #e6e9ef;
+    border-radius: 10px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent);
+}
+
+.upload-icon { font-size: 34px; margin: 6px 0; }
+
+.file-input-label {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+}
+
+.file-input-label input { display: none; }
+
+.upload-hint { font-size: 13px; color: var(--muted); }
+
+.doc-type { display: flex; flex-direction: column; gap: 6px; }
+
+.doc-type select {
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+}
+
+/* Preview */
+.preview {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px;
+    align-items: stretch;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.preview-label {
+    font-weight: 600;
+    font-size: 14px;
+    margin: 0;
+    padding: 0 4px;
+    color: var(--muted);
+}
+
+.preview-box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    min-height: 160px;
+    max-height: 360px;
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid #eef2f7;
+    background: #fbfdff;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.preview-box img {
+    display: block;
+    max-width: 100%;
+    max-height: 260px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 6px;
+    margin: 0;
+}
+
+.preview-info {
+    width: 100%;
+    text-align: left;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.25;
+}
+
+.preview-info > div { margin-bottom: 6px; }
+
+.preview-placeholder {
+    display: block;
+    width: 100%;
+    text-align: center;
+    color: var(--muted);
+    padding: 10px 6px;
+}
+
+/* Чтобы панель загрузки и превью не накладывались визуально */
+.upload-drop, .preview { position: relative; z-index: 1; }
+
+.processing-hint { font-size: 12px; color: var(--muted); }
+
+/* Контролы заполнения (кнопка + индикатор загрузки) — ниже превью */
+.fill-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+/* Стили для индикатора загрузки */
+.loading {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+/* Класс spinner — анимация */
+.spinner {
+    width: 18px;
+    height: 18px;
+    border: 3px solid rgba(0,0,0,0.08);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    box-sizing: border-box;
+}
+
+/* Скрытие по атрибуту hidden (удобно для управления через JS) */
+[hidden] { display: none !important; }
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Основная форма */
+.passport-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.group {
+    border-radius: 8px;
+    padding: 12px;
+    background: linear-gradient(180deg, #fff, #fbfdff);
+    border: 1px solid #f3f4f6;
+}
+
+.group legend { font-weight: 600; margin-bottom: 8px; }
+
+.row { display: flex; gap: 12px; }
+
+.two-cols .field { flex: 1; }
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.label { font-size: 13px; color: var(--muted); }
+
+input[type=text], select, textarea {
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #e6e9ef;
+    background: #fff;
+}
+
+textarea { resize: vertical; }
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding-top: 6px;
+}
+
+.btn {
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+
+.btn.primary { background: var(--accent); color: #fff; }
+
+.btn.ghost { background: transparent; border: 1px solid #e6e9ef; }
+
+.site-footer { padding: 12px 0; }
+
+.site-footer small { color: var(--muted); }
+
+/* Состояние dragover */
+.upload-drop.dragover {
+    border-color: var(--accent);
+    background: linear-gradient(180deg, rgba(37,99,235,0.06), transparent);
+    box-shadow: 0 4px 12px rgba(37,99,235,0.06);
+}
+
+/* ===== Вкладки документа (Passport / Foreign) ===== */
+.tabs-group {
+  padding: 12px;
+  margin-top: 12px;
+}
+
+/* Вкладки: (те же правила, + поддержка hidden/aria-hidden) */
+.tabs { display: inline-flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+.tab { appearance: none; border: 1px solid #e6e9ef; background: #fff; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: 600; color: #111827; transition: all 180ms ease; outline: none; }
+.tab--active, .tab[aria-selected="true"] { background: linear-gradient(180deg, rgba(37,99,235,0.08), rgba(37,99,235,0.03)); border-color: rgba(37,99,235,0.2); color: var(--accent); box-shadow: 0 6px 14px rgba(37,99,235,0.06); }
+.tab--filled { box-shadow: 0 0 0 4px rgba(37,99,235,0.08); border-color: rgba(37,99,235,0.28); background: linear-gradient(180deg, rgba(37,99,235,0.12), rgba(37,99,235,0.04)); }
+.tab:focus { box-shadow: 0 0 0 3px rgba(37,99,235,0.14); border-color: rgba(37,99,235,0.3); }
+
+/* панели */
+.tab-panel { display: none; opacity: 0; transition: opacity 160ms ease; }
+.tab-panel--active, .tab-panel[aria-hidden="false"] { display: block; opacity: 1; }
+.tab-panel[hidden] { display: none !important; }
+
+/* внутренняя обёртка fieldset в панели */
+.tab-panel .group.inner { margin: 0 0 12px 0; padding: 12px; border-radius: 8px; background: linear-gradient(180deg, #fff, #fbfdff); border: 1px solid #f3f4f6; }
+
+/* на мобайле - вкладки занимают ширину */
+@media (max-width:520px) {
+  .tabs { width: 100%; gap: 6px; }
+  .tab { flex: 1; text-align: center; padding: 10px 8px; }
+}
+
+/* Responsive */
+@media (max-width:900px) {
+    .main-layout { flex-direction: column; }
+    .upload-panel { flex-basis: auto; }
+}
+
+@media (max-width:520px) {
+    .file-input-label { width: 100%; text-align: center; }
+    .preview-box { height: 160px; }
+}
