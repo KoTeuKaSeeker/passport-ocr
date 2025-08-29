@@ -3,14 +3,19 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
 from PIL import Image
+import numpy as np
 import random
 import io
+
+from src.passport_recognitor import PassportRecognitor
 
 app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="static/templates")
+
+recognitor = PassportRecognitor()
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -20,24 +25,26 @@ async def index(request: Request):
 async def recognize_passport(file: UploadFile = File(...)):
     contents = await file.read()
     
-    image = Image.open(io.BytesIO(contents))
-    image.save("image.png")
+    image_pil = Image.open(io.BytesIO(contents)).convert("RGB")
+    image = np.array(image_pil)
 
-    passport_fields = {
-        'passport_surname': 'ДОЛГОВ', 
-        'passport_name': 'АЛЕКСАНДР', 
-        'passport_patronymic': 'ПЕТРОВИЧ', 
-        'passport_sex': 'M', 
-        'passport_birth_date': '10.05.03', 
-        'passport_birth_place': '1ox', 
-        'passport_series': '7323', 
-        'passport_number': '542628', 
-        'passport_issue_date': '03.07.23', 
-        'passport_department_code': '730-001', 
-        'passport_issued_by': "GET THIS INFORMATION FROM 'depratment_code'",\
-        "passport_citizenship": "Российсая Федерация ТЕСТ",
-        "passport_mrz": "P<RUSDOLOV<<ALEKSANDR<PETROVICH<<<<<<<<<<<<<<<<<<\n7323542628RUS0305103M2307036<<<<<<<<<<<<<<04"
-    }
+    passport_fields = recognitor.extract_passport_data(image)
+
+    # passport_fields = {
+    #     'passport_surname': 'ДОЛГОВ', 
+    #     'passport_name': 'АЛЕКСАНДР', 
+    #     'passport_patronymic': 'ПЕТРОВИЧ', 
+    #     'passport_sex': 'M', 
+    #     'passport_birth_date': '10.05.03', 
+    #     'passport_birth_place': '1ox', 
+    #     'passport_series': '7323', 
+    #     'passport_number': '542628', 
+    #     'passport_issue_date': '03.07.23', 
+    #     'passport_department_code': '730-001', 
+    #     'passport_issued_by': "GET THIS INFORMATION FROM 'depratment_code'",\
+    #     "passport_citizenship": "Российсая Федерация ТЕСТ",
+    #     "passport_mrz": "P<RUSDOLOV<<ALEKSANDR<PETROVICH<<<<<<<<<<<<<<<<<<\n7323542628RUS0305103M2307036<<<<<<<<<<<<<<04"
+    # }
 
     foreign_fields = {
         "foreign_doc_type": "P",
@@ -54,7 +61,8 @@ async def recognize_passport(file: UploadFile = File(...)):
         "foreign_mrz": "<<><><>><kek<><><>lol>>><>><>><><><><<>"
     }
 
-    passport_type = 'passport' if random.random() > 0.5 else 'foreign'
+    # passport_type = 'passport' if random.random() > 0.5 else 'foreign'
+    passport_type = 'passport'
     fields = {'passport': passport_fields, 'foreign': foreign_fields}[passport_type]
 
     # пока вернём "заглушку"
