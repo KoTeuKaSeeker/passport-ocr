@@ -66,8 +66,8 @@ class PassportRecognitor:
             '<': ' ', 
         }
         
-    def extract_passport_data(self, image_path: str):
-        result = self.ocr.predict(input=image_path)
+    def extract_passport_data(self, image: np.ndarray):
+        result = self.ocr.predict(image)
 
         mrz_first_line = result[0]["rec_texts"][-2]
         mrz_second_line = result[0]["rec_texts"][-1]
@@ -111,33 +111,33 @@ class PassportRecognitor:
         surname = self.mrz_name_to_cyrillic(fields.surname)
         name_and_patronymic = fields.name.split(" ")
 
-        output_dict["surname"] = surname
-        output_dict["name"] = self.mrz_name_to_cyrillic(name_and_patronymic[0])
-        output_dict["patronymic"] = self.mrz_name_to_cyrillic(name_and_patronymic[1]) if len(name_and_patronymic) > 1 else ""
+        output_dict["passport_surname"] = surname
+        output_dict["passport_name"] = self.mrz_name_to_cyrillic(name_and_patronymic[0])
+        output_dict["passport_patronymic"] = self.mrz_name_to_cyrillic(name_and_patronymic[1]) if len(name_and_patronymic) > 1 else ""
 
-        output_dict["sex"] = fields.sex # Пол
+        output_dict["passport_sex"] = fields.sex # Пол
         
         birth_year = fields.birth_date[0:2]
         birth_month = fields.birth_date[2:4]
         birth_day = fields.birth_date[4:6]
 
-        output_dict["birth_date"] = f"{birth_day}.{birth_month}.{birth_year}"
+        output_dict["passport_birth_date"] = f"{birth_day}.{birth_month}.{birth_year}"
 
-        output_dict["birth_place"] = birth_place
+        output_dict["passport_birth_place"] = birth_place
 
-        output_dict["series"] = fields.document_number[0:3] + fields.optional_data[0]
-        output_dict["number"] = fields.document_number[3:]
+        output_dict["passport_series"] = fields.document_number[0:3] + fields.optional_data[0]
+        output_dict["passport_number"] = fields.document_number[3:]
 
         issue_year = fields.optional_data[1:3]
         issue_month = fields.optional_data[3:5]
         issue_day = fields.optional_data[5:7]
 
 
-        output_dict["issue_date"] = f"{issue_day}.{issue_month}.{issue_year}"
+        output_dict["passport_issue_date"] = f"{issue_day}.{issue_month}.{issue_year}"
 
-        output_dict["department_code"] = fields.optional_data[7:10] + "-" + fields.optional_data[10:13]
+        output_dict["passport_department_code"] = fields.optional_data[7:10] + "-" + fields.optional_data[10:13]
 
-        output_dict["issued_by"] = "GET THIS INFORMATION FROM 'depratment_code'"
+        output_dict["passport_issued_by"] = "GET THIS INFORMATION FROM 'depratment_code'"
 
         return output_dict
 
