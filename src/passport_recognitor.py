@@ -1,27 +1,30 @@
 from mrz.checker.td3 import TD3CodeChecker
-from paddleocr import PaddleOCR
-import re
-from datetime import datetime
 from typing import List, Optional
+from paddleocr import PaddleOCR
+from datetime import datetime
+from rapidfuzz import fuzz
 import numpy as np
 import math
-from src.vllm_passport_recognitor import VLLMPassportRecognitor
-from PIL import Image
-import json
-import cv2
+import re
 
 
 class PassportRecognitor:
     ocr: PaddleOCR
 
-    def __init__(self, vllm: VLLMPassportRecognitor):
+    def __init__(self):
         self.ocr = PaddleOCR(
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
             lang='ru')
         
-        self.vllm = vllm
+        self.foreign_passport_keywords = [
+            "FEDERATION","PASSPORT","Surname","Nationality","Place of birth",
+            "Type","Code of issuing State","Passport No.","Date of expiry","Date of issue",
+            "Sex","Authority","Holder's signature","Given names"
+        ]
+        self.foreign_passport_keywords = [t.lower() for t in self.foreign_passport_keywords]
+
         
         self.DATE_CHARS_RE = re.compile(r'[0-9OQIDIl\|SsZzBbGg,./\\\-\s]{4,12}')
 
@@ -72,189 +75,124 @@ class PassportRecognitor:
             '<': ' ', 
         }
         
-    def expand_year_two_digits(self, yy_str: str) -> int:
-        """Expand two-digit year to four digits using cutoff by current year.
-        If yy <= current_year%100 -> 2000+yy else 1900+yy."""
-        try:
-            yy = int(yy_str)
-        except Exception:
-            return None
-        current_year = 2025  # явный год (по заданию: текущая дата 2025-09-01)
-        cutoff = current_year % 100
-        return 2000 + yy if yy <= cutoff else 1900 + yy
+    def extract_passport_data(self, image: np.ndarray):
+        paddle_result = self.ocr.predict(image)
 
-    def format_date_from_yymmdd(self, yymmdd: str) -> str:
-        """Convert YYMMDD (MRZ) to dd.mm.YYYY, return '' on failure."""
-        if not yymmdd or len(yymmdd) != 6:
-            return ""
-        yy = yymmdd[0:2]
-        mm = yymmdd[2:4]
-        dd = yymmdd[4:6]
-        full_year = self.expand_year_two_digits(yy)
-        if full_year is None:
-            return ""
-        # basic validation
-        try:
-            d = datetime(year=full_year, month=int(mm), day=int(dd))
-        except Exception:
-            return ""
-        return f"{dd}.{mm}.{full_year}"
-        
-    def extract_passport_data(self, image: Image.Image):
-        image = image.convert("RGB")
-        np_image = np.array(image)
-        np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2BGR)
+        passport_type = self.identify_passport_type(paddle_result[0]["rec_texts"])
 
-        prompt = """
-Определи, является ли паспорт загранпаспортом или обычным паспортом. Это можно
-сделать по следующей черте. У загранпаспорта имя гражданина написанно сразу
-как на русском, так и на английском (сначала на русском, затем через слеш "/" на
-английском), тоже самое и с фамилией. В обычном же паспорте имя и фамилия пишется
-чисто на русском.
+        passport_data = {}
 
-Определи место рождения гражданина, а также то, кем был выдан паспорт.
-Верни результат в виде JSON. Тип паспорта запиши в поле "passport_type" - если
-это обычный российский паспорт, то запиши в это поле строку "passport", если же
-загранпасспорт - то строку "foreign". Место рождения запиши в поле "birth_place",
-а то, кем был выдан паспорт запиши в поле "issued_by".
-"""
+        if passport_type == "internal":
+            passport_data = self.extract_internal_passport_data(paddle_result)
+        else:
+            passport_data = "Can't extract data from foreign passports yet."
 
-        msgs = [
-            {"role": "user", "content": [image, prompt]}
-        ]
-        answer = self.vllm.model.chat(msgs=msgs, tokenizer=self.vllm.tokenizer, enable_thinking=False)
-        obj = json.loads(answer)
+        return passport_data
+    
+    def extract_internal_passport_data(self, paddle_result: dict):
+        mrz_first_line = paddle_result[0]["rec_texts"][-2]
+        mrz_second_line = paddle_result[0]["rec_texts"][-1]
+
+
+        td3_check = TD3CodeChecker(mrz_first_line + "\n" + mrz_second_line)
+
+        fields = td3_check.fields()
+
+        birth_date_id = self.find_date_index(paddle_result[0]["rec_texts"])
+
+        down_dir = self.normalize_vector(paddle_result[0]["dt_polys"][-1][3] - paddle_result[0]["dt_polys"][-1][0])
+        birth_date_poly = paddle_result[0]["dt_polys"][birth_date_id]
+
+        source_line_length = 100
+
+        pt1 = birth_date_poly[3]
+        pt2 = (int(pt1[0] + down_dir[0] * source_line_length), 
+            int(pt1[1] + down_dir[1] * source_line_length))
+
+        source_line = [pt1, pt2]
+
+        found_idx = 0
+        min_dist = 0
+        for idx, poly in enumerate(paddle_result[0]["dt_polys"]):
+            if idx == birth_date_id:
+                continue
+
+            current_line = [poly[0], poly[1]]
+
+            dist = self.lines_intersect_distance(source_line, current_line)
+            if dist is not None:
+                if found_idx == 0 or dist < min_dist:
+                    found_idx = idx
+                    min_dist = dist
+
+        birth_place = paddle_result[0]["rec_texts"][found_idx]
 
         output_dict: dict = {}
-        passport_type = obj.get("passport_type", "")
-        output_dict["passport_type"] = passport_type
 
-        output_dict[f"{passport_type}_birth_place"] = obj.get("birth_place", "")
-        output_dict[f"{passport_type}_issued_by"] = obj.get("issued_by", "")
+        surname = self.mrz_name_to_cyrillic(fields.surname)
+        name_and_patronymic = fields.name.split(" ")
 
-        result = self.ocr.predict(np_image)
+        output_dict["passport_surname"] = surname
+        output_dict["passport_name"] = self.mrz_name_to_cyrillic(name_and_patronymic[0])
+        output_dict["passport_patronymic"] = self.mrz_name_to_cyrillic(name_and_patronymic[1]) if len(name_and_patronymic) > 1 else ""
 
-        mrz_first_line = next((text for text in result[0]["rec_texts"] if text.endswith("<<<")), None)
-        mrz_second_line = next((text for text in result[0]["rec_texts"] if text != mrz_first_line and "<<<" in text), None)
+        output_dict["passport_sex"] = fields.sex # Пол
+        
+        birth_year = fields.birth_date[0:2]
+        birth_month = fields.birth_date[2:4]
+        birth_day = fields.birth_date[4:6]
 
-        if not mrz_first_line or not mrz_second_line:
+        output_dict["passport_birth_date"] = f"{birth_day}.{birth_month}.{birth_year}"
 
-            output_dict["error"] = "MRZ not found"
-            return output_dict
-        else:
-            mrz_raw = mrz_first_line + "\n" + mrz_second_line
-            try:
-                td3_check = TD3CodeChecker(mrz_raw)
-                fields = td3_check.fields()
-            except Exception as e:
-                output_dict["error"] = f"MRZ parsing failed: {e}"
-                return output_dict
+        output_dict["passport_birth_place"] = birth_place
 
-            def fget(name: str) -> str:
-                return getattr(fields, name, "") or ""
+        output_dict["passport_series"] = fields.document_number[0:3] + fields.optional_data[0]
+        output_dict["passport_number"] = fields.document_number[3:]
 
-            latin_surname = fget("surname")
-            latin_name_block = fget("name")
+        issue_year = fields.optional_data[1:3]
+        issue_month = fields.optional_data[3:5]
+        issue_day = fields.optional_data[5:7]
 
-            def clean_name_block(nb: str) -> str:
-                if not nb:
-                    return ""
-                s = nb.replace("<", " ").strip()
 
-                s = s.replace("0", "O").replace("1", "I")
-                s = " ".join(s.split())
-                return s
+        output_dict["passport_issue_date"] = f"{issue_day}.{issue_month}.{issue_year}"
 
-            clean_names = clean_name_block(latin_name_block)
-            name_parts = clean_names.split(" ") if clean_names else []
+        output_dict["passport_department_code"] = fields.optional_data[7:10] + "-" + fields.optional_data[10:13]
 
-            output_dict[f"{passport_type}_surname"] = self.mrz_name_to_cyrillic(latin_surname) if latin_surname else ""
-            output_dict[f"{passport_type}_name"] = self.mrz_name_to_cyrillic(name_parts[0]) if len(name_parts) >= 1 else ""
-            output_dict[f"{passport_type}_patronymic"] = self.mrz_name_to_cyrillic(name_parts[1]) if len(name_parts) >= 2 else ""
+        output_dict["passport_issued_by"] = "GET THIS INFORMATION FROM 'depratment_code'"
 
-            output_dict[f"{passport_type}_sex"] = fget("sex") or ""
-            output_dict[f"{passport_type}_birth_date"] = self.format_date_from_yymmdd(fget("birth_date")) if fget("birth_date") else ""
+        return output_dict 
 
-            if passport_type == "passport":
-                docnum = fget("document_number")
-                opt = fget("optional_data")
-                if docnum and len(docnum) >= 6 and opt:
-                    output_dict["passport_series"] = docnum[0:3] + (opt[0] if len(opt) >= 1 else "")
-                    output_dict["passport_number"] = docnum[3:]
-                else:
-                    if docnum and len(docnum) >= 6:
-                        output_dict["passport_series"] = docnum[0:3]
-                        output_dict["passport_number"] = docnum[3:]
-                    else:
-                        output_dict["passport_series"] = ""
-                        output_dict["passport_number"] = ""
+    
+    def identify_passport_type(self, recognized_texts: List[str], threshold: float = 80) -> str:
+        """
+        Returns 'foreign' if any recognized OCR token (or its parts) matches English passport keywords.
+        Otherwise, returns 'internal'.
+        """
+        if not recognized_texts:
+            return "internal"
 
-                if opt and len(opt) >= 7:
-                    issue_yymmdd = opt[1:7]
-                    output_dict[f"{passport_type}_issue_date"] = self.format_date_from_yymmdd(issue_yymmdd)
-                else:
-                    output_dict[f"{passport_type}_issue_date"] = obj.get("issue_date", "")
+        for text in recognized_texts:
+            text = text.lower()
 
-                if opt and len(opt) >= 13:
-                    output_dict[f"{passport_type}_department_code"] = opt[7:10] + "-" + opt[10:13]
-                else:
-                    output_dict[f"{passport_type}_department_code"] = ""
+            if len(text) < 3:
+                continue
 
-            elif passport_type == "foreign":
-                foreign_fields = {
-                    "foreign_doc_type": fget("document_type") or "P",
-                    "foreign_country_code": fget("country") or "",
-                    "foreign_citizenship": fget("nationality") or "",
-                    "foreign_latin_name": "",
-                    "foreign_birth_date": self.format_date_from_yymmdd(fget("birth_date")) if fget("birth_date") else "",
-                    "foreign_sex": fget("sex") or "",
-                    "foreign_birth_place": obj.get("birth_place", ""),
-                    "foreign_number": fget("document_number") or "",
-                    "foreign_issue_date": "",
-                    "foreign_expiry_date": self.format_date_from_yymmdd(fget("expiry_date")) if fget("expiry_date") else "",
-                    "foreign_issued_by": obj.get("issued_by", ""),
-                    "foreign_mrz": mrz_raw,
-                }
+            ocr_tokens = text.split()
+            if not ocr_tokens:
+                continue
 
-                if latin_surname and len(name_parts) >= 1 and name_parts[0]:
-                    foreign_fields["foreign_latin_name"] = f"{latin_surname} {name_parts[0]}"
-                else:
-                    foreign_fields["foreign_latin_name"] = (latin_surname + " " + clean_names).strip()
+            ocr_tokens = [text] + ocr_tokens
 
-                opt = fget("optional_data")
-                if opt and len(opt) >= 7:
-                    issue_yymmdd = opt[1:7]
-                    parsed_issue = self.format_date_from_yymmdd(issue_yymmdd)
-                    foreign_fields["foreign_issue_date"] = parsed_issue
+            for keyword in self.foreign_passport_keywords:
+                for ocr_tok in ocr_tokens:
+                    if len(ocr_tok) < 3:
+                        continue
+                    score = fuzz.ratio(ocr_tok, keyword)
+                    if score >= threshold:
+                        return "foreign"
 
-                if not foreign_fields["foreign_issue_date"]:
-                    foreign_fields["foreign_issue_date"] = obj.get("issue_date", "")
+        return "internal"
 
-                mrz_valid = None
-                mrz_warnings = None
-                if hasattr(td3_check, "is_valid") and callable(getattr(td3_check, "is_valid")):
-                    try:
-                        mrz_valid = td3_check.is_valid()
-                    except Exception:
-                        mrz_valid = None
-                if mrz_valid is None and hasattr(td3_check, "valid"):
-                    mrz_valid = getattr(td3_check, "valid", None)
-
-                if hasattr(td3_check, "warnings"):
-                    try:
-                        mrz_warnings = td3_check.warnings
-                    except Exception:
-                        mrz_warnings = None
-
-                foreign_fields["foreign_mrz_valid"] = mrz_valid
-                foreign_fields["foreign_mrz_warnings"] = mrz_warnings
-
-                output_dict.update(foreign_fields)
-
-            else:
-                output_dict["error"] = "Unknown passport_type"
-
-        return output_dict
 
     def mrz_name_to_cyrillic(self, mrz_name_token: str) -> str:
         """Convert a single MRZ name token (like 'IVANOV<<ALEKSEQ<<<<<<<<') to Cyrillic string."""

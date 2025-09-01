@@ -8,7 +8,7 @@ import random
 import io
 
 from src.vllm_passport_recognitor import VLLMPassportRecognitor
-from src.passport_recognitor import PassportRecognitor
+from passport_recognitor_with_llm import PassportRecognitor
 
 app = FastAPI()
 
