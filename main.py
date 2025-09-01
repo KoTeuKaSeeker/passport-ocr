@@ -7,6 +7,7 @@ import numpy as np
 import random
 import io
 
+from src.vllm_passport_recognitor import VLLMPassportRecognitor
 from src.passport_recognitor import PassportRecognitor
 
 app = FastAPI()
@@ -15,7 +16,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="static/templates")
 
-recognitor = PassportRecognitor()
+passport_prompt_path = r"prompts/passport_prompt_gpt.md"
+vllm = VLLMPassportRecognitor(passport_prompt_path)
+recognitor = PassportRecognitor(vllm)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -26,9 +29,8 @@ async def recognize_passport(file: UploadFile = File(...)):
     contents = await file.read()
     
     image_pil = Image.open(io.BytesIO(contents)).convert("RGB")
-    image = np.array(image_pil)
 
-    passport_fields = recognitor.extract_passport_data(image)
+    passport_fields = recognitor.extract_passport_data(image_pil)
 
     # passport_fields = {
     #     'passport_surname': 'ДОЛГОВ', 
@@ -46,24 +48,22 @@ async def recognize_passport(file: UploadFile = File(...)):
     #     "passport_mrz": "P<RUSDOLOV<<ALEKSANDR<PETROVICH<<<<<<<<<<<<<<<<<<\n7323542628RUS0305103M2307036<<<<<<<<<<<<<<04"
     # }
 
-    foreign_fields = {
-        "foreign_doc_type": "P",
-        "foreign_country_code": "RUS",
-        "foreign_citizenship": "RUS",
-        "foreign_latin_name": "IVANOV IVAN",
-        "foreign_birth_date": "10.05.2003",
-        "foreign_sex": "M",
-        "foreign_birth_place": "г. Ульяновск",
-        "foreign_number": "XXXXXXX",
-        "foreign_issue_date": "21.02.2023",
-        "foreign_expiry_date": "21.02.2027",
-        "foreign_issued_by": "УМВД и ещё чего-то там...",
-        "foreign_mrz": "<<><><>><kek<><><>lol>>><>><>><><><><<>"
-    }
+    # foreign_fields = {
+    #     "foreign_doc_type": "P",
+    #     "foreign_country_code": "RUS",
+    #     "foreign_citizenship": "RUS",
+    #     "foreign_latin_name": "IVANOV IVAN",
+    #     "foreign_birth_date": "10.05.2003",
+    #     "foreign_sex": "M",
+    #     "foreign_birth_place": "г. Ульяновск",
+    #     "foreign_number": "XXXXXXX",
+    #     "foreign_issue_date": "21.02.2023",
+    #     "foreign_expiry_date": "21.02.2027",
+    #     "foreign_issued_by": "УМВД и ещё чего-то там...",
+    #     "foreign_mrz": "<<><><>><kek<><><>lol>>><>><>><><><><<>"
+    # }
 
     # passport_type = 'passport' if random.random() > 0.5 else 'foreign'
-    passport_type = 'passport'
-    fields = {'passport': passport_fields, 'foreign': foreign_fields}[passport_type]
 
     # пока вернём "заглушку"
     result = {
@@ -71,8 +71,8 @@ async def recognize_passport(file: UploadFile = File(...)):
         "content_type": file.content_type,
         "size": len(contents),
         "status": "ok",
-        "passport_type": passport_type,
-        "fields": fields
+        "passport_type": passport_fields["passport_type"],
+        "fields": passport_fields
     }
 
     return JSONResponse(content=result)
@@ -80,4 +80,4 @@ async def recognize_passport(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)

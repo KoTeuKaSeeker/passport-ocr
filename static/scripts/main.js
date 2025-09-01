@@ -457,8 +457,11 @@
                     // UX: фокус на первом поле выбранной панели
                     const panel = chosen === 'passport' ? tabPanelPassport : tabPanelForeign;
                     focusFirstFieldInPanel(panel);
-
-                    showMessage('Форма успешно заполнена (демонстрационные значения).', 'info');
+                    
+                    if ("error" in data)
+                        showMessage('Ошибка: ' + data["error"], 'error');
+                    else
+                        showMessage('Форма успешно заполнена.', 'info');
 
                 }).catch(err => {
                     console.error("Ошибка распознавания:", err);

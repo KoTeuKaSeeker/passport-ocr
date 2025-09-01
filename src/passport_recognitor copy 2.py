@@ -72,34 +72,6 @@ class PassportRecognitor:
             '<': ' ', 
         }
         
-    def expand_year_two_digits(self, yy_str: str) -> int:
-        """Expand two-digit year to four digits using cutoff by current year.
-        If yy <= current_year%100 -> 2000+yy else 1900+yy."""
-        try:
-            yy = int(yy_str)
-        except Exception:
-            return None
-        current_year = 2025  # явный год (по заданию: текущая дата 2025-09-01)
-        cutoff = current_year % 100
-        return 2000 + yy if yy <= cutoff else 1900 + yy
-
-    def format_date_from_yymmdd(self, yymmdd: str) -> str:
-        """Convert YYMMDD (MRZ) to dd.mm.YYYY, return '' on failure."""
-        if not yymmdd or len(yymmdd) != 6:
-            return ""
-        yy = yymmdd[0:2]
-        mm = yymmdd[2:4]
-        dd = yymmdd[4:6]
-        full_year = self.expand_year_two_digits(yy)
-        if full_year is None:
-            return ""
-        # basic validation
-        try:
-            d = datetime(year=full_year, month=int(mm), day=int(dd))
-        except Exception:
-            return ""
-        return f"{dd}.{mm}.{full_year}"
-        
     def extract_passport_data(self, image: Image.Image):
         image = image.convert("RGB")
         np_image = np.array(image)
@@ -107,10 +79,8 @@ class PassportRecognitor:
 
         prompt = """
 Определи, является ли паспорт загранпаспортом или обычным паспортом. Это можно
-сделать по следующей черте. У загранпаспорта имя гражданина написанно сразу
-как на русском, так и на английском (сначала на русском, затем через слеш "/" на
-английском), тоже самое и с фамилией. В обычном же паспорте имя и фамилия пишется
-чисто на русском.
+сделать по цвету. Загранпаспорт обычно имеет розоватый оттенок фона, а обычный
+паспорт ближе к обычному белому бумажному цвету.
 
 Определи место рождения гражданина, а также то, кем был выдан паспорт.
 Верни результат в виде JSON. Тип паспорта запиши в поле "passport_type" - если
@@ -126,133 +96,48 @@ class PassportRecognitor:
         obj = json.loads(answer)
 
         output_dict: dict = {}
-        passport_type = obj.get("passport_type", "")
+        passport_type = obj["passport_type"]
         output_dict["passport_type"] = passport_type
-
-        output_dict[f"{passport_type}_birth_place"] = obj.get("birth_place", "")
-        output_dict[f"{passport_type}_issued_by"] = obj.get("issued_by", "")
+        output_dict[f"{passport_type}_birth_place"] = obj["birth_place"]
+        output_dict[f"{passport_type}_issued_by"] = obj["issued_by"]
 
         result = self.ocr.predict(np_image)
 
         mrz_first_line = next((text for text in result[0]["rec_texts"] if text.endswith("<<<")), None)
         mrz_second_line = next((text for text in result[0]["rec_texts"] if text != mrz_first_line and "<<<" in text), None)
 
-        if not mrz_first_line or not mrz_second_line:
+        td3_check = TD3CodeChecker(mrz_first_line + "\n" + mrz_second_line)
 
-            output_dict["error"] = "MRZ not found"
-            return output_dict
+        fields = td3_check.fields()
+
+        surname = self.mrz_name_to_cyrillic(fields.surname)
+        name_and_patronymic = fields.name.split(" ")
+
+        output_dict[f"{passport_type}_surname"] = surname
+        output_dict[f"{passport_type}_name"] = self.mrz_name_to_cyrillic(name_and_patronymic[0])
+        output_dict[f"{passport_type}_patronymic"] = self.mrz_name_to_cyrillic(name_and_patronymic[1]) if len(name_and_patronymic) > 1 else ""
+
+        output_dict[f"{passport_type}_sex"] = fields.sex # Пол
+        
+        birth_year = fields.birth_date[0:2]
+        birth_month = fields.birth_date[2:4]
+        birth_day = fields.birth_date[4:6]
+
+        output_dict[f"{passport_type}_birth_date"] = f"{birth_day}.{birth_month}.{birth_year}"
+
+        if passport_type == "passport":
+            output_dict["passport_series"] = fields.document_number[0:3] + fields.optional_data[0]
+            output_dict["passport_number"] = fields.document_number[3:]
         else:
-            mrz_raw = mrz_first_line + "\n" + mrz_second_line
-            try:
-                td3_check = TD3CodeChecker(mrz_raw)
-                fields = td3_check.fields()
-            except Exception as e:
-                output_dict["error"] = f"MRZ parsing failed: {e}"
-                return output_dict
+            output_dict["foreign_number"] = fields.document_number
 
-            def fget(name: str) -> str:
-                return getattr(fields, name, "") or ""
+        issue_year = fields.optional_data[1:3]
+        issue_month = fields.optional_data[3:5]
+        issue_day = fields.optional_data[5:7]
 
-            latin_surname = fget("surname")
-            latin_name_block = fget("name")
+        output_dict[f"{passport_type}_issue_date"] = f"{issue_day}.{issue_month}.{issue_year}"
 
-            def clean_name_block(nb: str) -> str:
-                if not nb:
-                    return ""
-                s = nb.replace("<", " ").strip()
-
-                s = s.replace("0", "O").replace("1", "I")
-                s = " ".join(s.split())
-                return s
-
-            clean_names = clean_name_block(latin_name_block)
-            name_parts = clean_names.split(" ") if clean_names else []
-
-            output_dict[f"{passport_type}_surname"] = self.mrz_name_to_cyrillic(latin_surname) if latin_surname else ""
-            output_dict[f"{passport_type}_name"] = self.mrz_name_to_cyrillic(name_parts[0]) if len(name_parts) >= 1 else ""
-            output_dict[f"{passport_type}_patronymic"] = self.mrz_name_to_cyrillic(name_parts[1]) if len(name_parts) >= 2 else ""
-
-            output_dict[f"{passport_type}_sex"] = fget("sex") or ""
-            output_dict[f"{passport_type}_birth_date"] = self.format_date_from_yymmdd(fget("birth_date")) if fget("birth_date") else ""
-
-            if passport_type == "passport":
-                docnum = fget("document_number")
-                opt = fget("optional_data")
-                if docnum and len(docnum) >= 6 and opt:
-                    output_dict["passport_series"] = docnum[0:3] + (opt[0] if len(opt) >= 1 else "")
-                    output_dict["passport_number"] = docnum[3:]
-                else:
-                    if docnum and len(docnum) >= 6:
-                        output_dict["passport_series"] = docnum[0:3]
-                        output_dict["passport_number"] = docnum[3:]
-                    else:
-                        output_dict["passport_series"] = ""
-                        output_dict["passport_number"] = ""
-
-                if opt and len(opt) >= 7:
-                    issue_yymmdd = opt[1:7]
-                    output_dict[f"{passport_type}_issue_date"] = self.format_date_from_yymmdd(issue_yymmdd)
-                else:
-                    output_dict[f"{passport_type}_issue_date"] = obj.get("issue_date", "")
-
-                if opt and len(opt) >= 13:
-                    output_dict[f"{passport_type}_department_code"] = opt[7:10] + "-" + opt[10:13]
-                else:
-                    output_dict[f"{passport_type}_department_code"] = ""
-
-            elif passport_type == "foreign":
-                foreign_fields = {
-                    "foreign_doc_type": fget("document_type") or "P",
-                    "foreign_country_code": fget("country") or "",
-                    "foreign_citizenship": fget("nationality") or "",
-                    "foreign_latin_name": "",
-                    "foreign_birth_date": self.format_date_from_yymmdd(fget("birth_date")) if fget("birth_date") else "",
-                    "foreign_sex": fget("sex") or "",
-                    "foreign_birth_place": obj.get("birth_place", ""),
-                    "foreign_number": fget("document_number") or "",
-                    "foreign_issue_date": "",
-                    "foreign_expiry_date": self.format_date_from_yymmdd(fget("expiry_date")) if fget("expiry_date") else "",
-                    "foreign_issued_by": obj.get("issued_by", ""),
-                    "foreign_mrz": mrz_raw,
-                }
-
-                if latin_surname and len(name_parts) >= 1 and name_parts[0]:
-                    foreign_fields["foreign_latin_name"] = f"{latin_surname} {name_parts[0]}"
-                else:
-                    foreign_fields["foreign_latin_name"] = (latin_surname + " " + clean_names).strip()
-
-                opt = fget("optional_data")
-                if opt and len(opt) >= 7:
-                    issue_yymmdd = opt[1:7]
-                    parsed_issue = self.format_date_from_yymmdd(issue_yymmdd)
-                    foreign_fields["foreign_issue_date"] = parsed_issue
-
-                if not foreign_fields["foreign_issue_date"]:
-                    foreign_fields["foreign_issue_date"] = obj.get("issue_date", "")
-
-                mrz_valid = None
-                mrz_warnings = None
-                if hasattr(td3_check, "is_valid") and callable(getattr(td3_check, "is_valid")):
-                    try:
-                        mrz_valid = td3_check.is_valid()
-                    except Exception:
-                        mrz_valid = None
-                if mrz_valid is None and hasattr(td3_check, "valid"):
-                    mrz_valid = getattr(td3_check, "valid", None)
-
-                if hasattr(td3_check, "warnings"):
-                    try:
-                        mrz_warnings = td3_check.warnings
-                    except Exception:
-                        mrz_warnings = None
-
-                foreign_fields["foreign_mrz_valid"] = mrz_valid
-                foreign_fields["foreign_mrz_warnings"] = mrz_warnings
-
-                output_dict.update(foreign_fields)
-
-            else:
-                output_dict["error"] = "Unknown passport_type"
+        output_dict[f"{passport_type}_department_code"] = fields.optional_data[7:10] + "-" + fields.optional_data[10:13]
 
         return output_dict
 
