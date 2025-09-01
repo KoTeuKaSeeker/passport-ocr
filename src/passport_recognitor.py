@@ -1,8 +1,8 @@
 from mrz.checker.td3 import TD3CodeChecker
+from rapidfuzz import process, fuzz
 from typing import List, Optional
 from paddleocr import PaddleOCR
 from datetime import datetime
-from rapidfuzz import fuzz
 import numpy as np
 import math
 import re
@@ -25,6 +25,9 @@ class PassportRecognitor:
         ]
         self.foreign_passport_keywords = [t.lower() for t in self.foreign_passport_keywords]
 
+        self.foreign_passport_authority_keywords = ["ФМС", "ГУВМ", "МВД", "МИД", "МИД РФ"]
+
+        self.authority_threshold = 80
         
         self.DATE_CHARS_RE = re.compile(r'[0-9OQIDIl\|SsZzBbGg,./\\\-\s]{4,12}')
 
@@ -74,9 +77,30 @@ class PassportRecognitor:
             # filler and separators
             '<': ' ', 
         }
+
+        self.LATIN_TO_CYR = {
+            'A':'А','B':'В','C':'С','E':'Е','H':'Н','K':'К','M':'М','O':'О','P':'Р','T':'Т','Y':'У','X':'Х',
+            'a':'а','b':'в','c':'с','e':'е','o':'о','p':'р','y':'у','x':'х','m':'м','k':'к','t':'т'
+        }
+        self.EXTRA_VARIANTS = {
+            'Φ':'Ф',  # Greek Capital Phi U+03A6
+            'φ':'ф',  # Greek Small Phi U+03C6
+            'Ѳ':'Ф',  # Cyrillic Fita U+0472
+            'ѳ':'ф',  # Cyrillic small fita U+0473
+            # при желании можно добавить 'F'->'Ф' и 'f'->'ф' (если OCR даёт латинский F)
+            # 'F':'Ф', 'f':'ф',
+        }
+
+        all_map = {**self.LATIN_TO_CYR, **self.EXTRA_VARIANTS}
+        self.translate_table = str.maketrans({ord(k): ord(v) for k, v in all_map.items()})
         
     def extract_passport_data(self, image: np.ndarray):
         paddle_result = self.ocr.predict(image)
+
+        for res in paddle_result:
+            res.print()
+            res.save_to_img("output")
+            res.save_to_json("output")
 
         passport_type = self.identify_passport_type(paddle_result[0]["rec_texts"])
 
@@ -85,7 +109,8 @@ class PassportRecognitor:
         if passport_type == "internal":
             passport_data = self.extract_internal_passport_data(paddle_result)
         else:
-            passport_data = "Can't extract data from foreign passports yet."
+            # passport_data = "Can't extract data from foreign passports yet."
+            passport_data = self.extract_foreign_passport_data(paddle_result)
 
         return passport_data
     
@@ -98,7 +123,7 @@ class PassportRecognitor:
 
         fields = td3_check.fields()
 
-        birth_date_id = self.find_date_index(paddle_result[0]["rec_texts"])
+        birth_date_id = self.find_date_indices(paddle_result[0]["rec_texts"])[-1]
 
         down_dir = self.normalize_vector(paddle_result[0]["dt_polys"][-1][3] - paddle_result[0]["dt_polys"][-1][0])
         birth_date_poly = paddle_result[0]["dt_polys"][birth_date_id]
@@ -161,6 +186,114 @@ class PassportRecognitor:
         output_dict["passport_issued_by"] = "GET THIS INFORMATION FROM 'depratment_code'"
 
         return output_dict 
+    
+    def extract_foreign_passport_data(self, paddle_result: dict):
+        mrz_first_line = paddle_result[0]["rec_texts"][-2]
+        mrz_second_line = paddle_result[0]["rec_texts"][-1]
+
+        td3_check = TD3CodeChecker(mrz_first_line + "\n" + mrz_second_line)
+
+        date_indices = self.find_date_indices(paddle_result[0]["rec_texts"])
+
+        fields = td3_check.fields()
+
+        output_dict: dict = {}
+
+        best_surname_match = process.extractOne(fields.surname, paddle_result[0]["rec_texts"], scorer=fuzz.ratio)
+        lat_surname_id = best_surname_match[2]
+        lat_surname = paddle_result[0]["rec_texts"][lat_surname_id]
+        cyr_surname = paddle_result[0]["rec_texts"][lat_surname_id - 1]
+
+        best_name_match = process.extractOne(fields.name, paddle_result[0]["rec_texts"], scorer=fuzz.ratio)
+        lat_name_id = best_name_match[2]
+        lat_name = paddle_result[0]["rec_texts"][lat_name_id]
+        cyr_name = paddle_result[0]["rec_texts"][lat_name_id - 1]
+
+        cyr_patronymic = ""
+        rus_name_splitted = cyr_name.split()
+        if len(rus_name_splitted) > 1:
+            cyr_name_splitted = cyr_name.split()
+            cyr_name = cyr_name_splitted[0]
+            cyr_patronymic = cyr_name_splitted[-1]
+        
+        best_id = -1
+        best_score = -1
+        for keyword in self.foreign_passport_authority_keywords:
+            for rec_text_id, rec_text in enumerate(paddle_result[0]["rec_texts"]):
+                rec_text_splitted = rec_text.split()
+                if len(rec_text_splitted) > 1:
+                    rec_text = rec_text.rsplit(' ', 1)[0]
+                
+                score = fuzz.ratio(self.latin_to_cyr(rec_text), keyword)
+
+                if score > best_score:
+                    best_id = rec_text_id
+                    best_score = score
+        
+        authority = ""
+        if best_id >= 0 and best_score >= self.authority_threshold:
+            authority = paddle_result[0]["rec_texts"][best_id]
+
+        output_dict["foreign_authority"] = authority
+
+        output_dict["foreign_lat_surname"] = lat_surname
+        output_dict["foreign_lat_name"] = lat_name
+
+        output_dict["foreign_cyr_surname"] = cyr_surname
+        output_dict["foreign_cyr_name"] = cyr_name
+        output_dict["foreign_patronymic"] = cyr_patronymic
+
+        output_dict["foreign_sex"] = fields.sex
+        
+        birth_year = fields.birth_date[0:2]
+        birth_month = fields.birth_date[2:4]
+        birth_day = fields.birth_date[4:6]
+
+        output_dict["foreign_birth_date"] = f"{birth_day}.{birth_month}.{birth_year}"
+
+        output_dict["foreign_nationality"] = fields.nationality
+
+        output_dict["foreign_issue_date"] = paddle_result[0]["rec_texts"][date_indices[-2]]
+
+        expiry_year = fields.expiry_date[0:2]
+        expiry_month = fields.expiry_date[2:4]
+        expiry_day = fields.expiry_date[4:6]
+
+        output_dict["foreign_expiry_date"] = f"{expiry_day}.{expiry_month}.{expiry_year}"
+
+        output_dict["foreign_document_number"] = fields.document_number
+
+        output_dict["mrz_1"] = mrz_first_line
+        output_dict["mrz_2"] = mrz_second_line
+
+        return output_dict
+
+    def latin_to_cyr(self, s: str) -> str:
+        """Заменяет латинские буквы из таблицы на кириллические.
+        Остальные символы остаются без изменений."""
+        return s.translate(self.translate_table)
+    
+    
+    # def count_scripts(self, s: str):
+    #     cyr = 0
+    #     lat = 0
+    #     for ch in s:
+    #         # простая проверка по диапазонам Unicode
+    #         if '\u0400' <= ch <= '\u04FF' or '\u0500' <= ch <= '\u052F':
+    #             cyr += 1
+    #         elif 'A' <= ch <= 'Z' or 'a' <= ch <= 'z':
+    #             lat += 1
+    #     return cyr, lat
+
+    # def normalize_homoglyphs(self, s: str) -> str:
+    #     """Преобразует символы из меньшинственного скрипта в доминирующий по внешнему виду."""
+    #     cyr, lat = self.count_scripts(s)
+    #     # если кириллицы больше или равно — приводим латиницу к кириллице
+    #     if cyr >= lat:
+    #         mapping = self.LATIN_TO_CYR
+    #     else:
+    #         mapping = self.CYR_TO_LATIN
+    #     return ''.join(mapping.get(ch, ch) for ch in s)
 
     
     def identify_passport_type(self, recognized_texts: List[str], threshold: float = 80) -> str:
@@ -259,7 +392,7 @@ class PassportRecognitor:
         return v / norm
 
 
-    def find_date_index(self, lines: List[str]) -> int:
+    def find_date_indices(self, lines: List[str]) -> int:
         """
         Returns the index of the element in `lines` that looks like a date, or -1 if none found.
         Assumes there's at most one real date in the list (but will return the first good match).
@@ -277,7 +410,7 @@ class PassportRecognitor:
                 if parsed:
                     found_indices.append(idx)
 
-        return found_indices[-1] if found_indices else -1
+        return found_indices
 
     def _normalize_token(self, t: str) -> str:
         out = []
