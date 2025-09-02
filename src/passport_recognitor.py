@@ -118,7 +118,6 @@ class PassportRecognitor:
         mrz_first_line = paddle_result[0]["rec_texts"][-2]
         mrz_second_line = paddle_result[0]["rec_texts"][-1]
 
-
         td3_check = TD3CodeChecker(mrz_first_line + "\n" + mrz_second_line)
 
         fields = td3_check.fields()
@@ -128,29 +127,25 @@ class PassportRecognitor:
         down_dir = self.normalize_vector(paddle_result[0]["dt_polys"][-1][3] - paddle_result[0]["dt_polys"][-1][0])
         birth_date_poly = paddle_result[0]["dt_polys"][birth_date_id]
 
-        source_line_length = 100
 
-        pt1 = birth_date_poly[3]
-        pt2 = (int(pt1[0] + down_dir[0] * source_line_length), 
-            int(pt1[1] + down_dir[1] * source_line_length))
+        birth_place_id = self.find_closest_in_dir(birth_date_poly[3], 
+                                                  birth_date_id, 
+                                                  down_dir, 
+                                                  paddle_result[0]["dt_polys"])
 
-        source_line = [pt1, pt2]
+        birth_place = paddle_result[0]["rec_texts"][birth_place_id]
 
-        found_idx = 0
-        min_dist = 0
-        for idx, poly in enumerate(paddle_result[0]["dt_polys"]):
-            if idx == birth_date_id:
-                continue
 
-            current_line = [poly[0], poly[1]]
+        best_russian_match = process.extractOne("РОССИЙСКАЯ", paddle_result[0]["rec_texts"], scorer=fuzz.ratio)
+        russian_id = best_russian_match[2]
+        russian_poly = paddle_result[0]["dt_polys"][russian_id]
 
-            dist = self.lines_intersect_distance(source_line, current_line)
-            if dist is not None:
-                if found_idx == 0 or dist < min_dist:
-                    found_idx = idx
-                    min_dist = dist
+        authority_id = self.find_closest_in_dir(russian_poly[2], 
+                                                  russian_id, 
+                                                  down_dir, 
+                                                  paddle_result[0]["dt_polys"])
 
-        birth_place = paddle_result[0]["rec_texts"][found_idx]
+        authority = paddle_result[0]["rec_texts"][authority_id]
 
         output_dict: dict = {}
 
@@ -183,9 +178,32 @@ class PassportRecognitor:
 
         output_dict["passport_department_code"] = fields.optional_data[7:10] + "-" + fields.optional_data[10:13]
 
-        output_dict["passport_issued_by"] = "GET THIS INFORMATION FROM 'depratment_code'"
+        output_dict["passport_authority"] = authority
 
-        return output_dict 
+        return output_dict
+
+    def find_closest_in_dir(self, origin_pos: list, origin_id: int, dir: list, polyes: list, source_line_length: int = 100) -> int:
+        pt1 = origin_pos
+        pt2 = (int(pt1[0] + dir[0] * source_line_length), 
+            int(pt1[1] + dir[1] * source_line_length))
+
+        source_line = [pt1, pt2]
+
+        found_idx = 0
+        min_dist = 0
+        for idx, poly in enumerate(polyes):
+            if idx == origin_id:
+                continue
+
+            current_line = [poly[0], poly[1]]
+
+            dist = self.lines_intersect_distance(source_line, current_line)
+            if dist is not None:
+                if found_idx == 0 or dist < min_dist:
+                    found_idx = idx
+                    min_dist = dist
+
+        return found_idx
     
     def extract_foreign_passport_data(self, paddle_result: dict):
         mrz_first_line = paddle_result[0]["rec_texts"][-2]
