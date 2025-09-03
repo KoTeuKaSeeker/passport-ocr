@@ -178,7 +178,7 @@
 
                     <label class="field">
                         <span class="label">Кем выдан</span>
-                        <input type="text" name="passport_issued_by" placeholder="Название органа" />
+                        <input type="text" name="passport_authority" placeholder="Название органа" />
                     </label>
 
                     <label class="field">
@@ -204,25 +204,34 @@
                 >
                 <fieldset class="group inner">
                     <legend>Данные загранпаспорта</legend>
-
-                    <label class="field">
-                        <span class="label">Тип документа</span>
-                        <input type="text" name="foreign_doc_type" placeholder="P" />
-                    </label>
-
-                    <label class="field">
-                        <span class="label">Код государства</span>
-                        <input type="text" name="foreign_country_code" placeholder="RUS" />
-                    </label>
-
                     <label class="field">
                         <span class="label">Гражданство</span>
-                        <input type="text" name="foreign_citizenship" placeholder="RUS" />
+                        <input type="text" name="foreign_nationality" placeholder="RUS" />
                     </label>
 
                     <label class="field">
-                        <span class="label">Фамилия / Имя (латиница)</span>
-                        <input type="text" name="foreign_latin_name" placeholder="IVANOV IVAN" />
+                        <span class="label">Фамилия (латиница)</span>
+                        <input type="text" name="foreign_lat_surname" placeholder="IVANOV" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Имя (латиница)</span>
+                        <input type="text" name="foreign_lat_name" placeholder="IVAN" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Фамилия</span>
+                        <input type="text" name="foreign_cyr_surname" placeholder="Иванов" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Имя</span>
+                        <input type="text" name="foreign_cyr_name" placeholder="Иван" />
+                    </label>
+
+                    <label class="field">
+                        <span class="label">Отчество</span>
+                        <input type="text" name="foreign_patronymic" placeholder="Иванович" />
                     </label>
 
                     <label class="field">
@@ -239,13 +248,8 @@
                     </label>
 
                     <label class="field">
-                        <span class="label">Место рождения</span>
-                        <input type="text" name="foreign_birth_place" placeholder="Место рождения" />
-                    </label>
-
-                    <label class="field">
                         <span class="label">Номер документа</span>
-                        <input type="text" name="foreign_number" placeholder="XXXXXXX" />
+                        <input type="text" name="foreign_document_number" placeholder="XXXXXXX" />
                     </label>
 
                     <div class="row two-cols">
@@ -258,11 +262,6 @@
                         <input type="text" name="foreign_expiry_date" placeholder="ДД.ММ.ГГГГ" />
                         </label>
                     </div>
-
-                    <label class="field">
-                        <span class="label">Орган, выдавший документ</span>
-                        <input type="text" name="foreign_issued_by" placeholder="Орган, выдавший" />
-                    </label>
 
                     <label class="field">
                         <span class="label">MRZ (2 строки)</span>

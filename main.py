@@ -6,9 +6,7 @@ from PIL import Image
 import numpy as np
 import random
 import io
-
-from src.vllm_passport_recognitor import VLLMPassportRecognitor
-from passport_recognitor_with_llm import PassportRecognitor
+from src.passport_recognitor import PassportRecognitor
 
 app = FastAPI()
 
@@ -17,8 +15,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="static/templates")
 
 passport_prompt_path = r"prompts/passport_prompt_gpt.md"
-vllm = VLLMPassportRecognitor(passport_prompt_path)
-recognitor = PassportRecognitor(vllm)
+recognitor = PassportRecognitor()
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -29,8 +26,9 @@ async def recognize_passport(file: UploadFile = File(...)):
     contents = await file.read()
     
     image_pil = Image.open(io.BytesIO(contents)).convert("RGB")
+    image = np.array(image_pil)
 
-    passport_fields = recognitor.extract_passport_data(image_pil)
+    passport_fields = recognitor.extract_passport_data(image)
 
     # passport_fields = {
     #     'passport_surname': 'ДОЛГОВ', 
@@ -70,10 +68,14 @@ async def recognize_passport(file: UploadFile = File(...)):
         "filename": file.filename,
         "content_type": file.content_type,
         "size": len(contents),
-        "status": "ok",
         "passport_type": passport_fields["passport_type"],
         "fields": passport_fields
     }
+
+    if "error" in passport_fields:
+        result["error"] = str(passport_fields.get("error", None))
+        del passport_fields["error"]
+
 
     return JSONResponse(content=result)
 

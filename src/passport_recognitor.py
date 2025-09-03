@@ -119,6 +119,8 @@ class PassportRecognitor:
             # passport_data = "Can't extract data from foreign passports yet."
             passport_data = self.extract_foreign_passport_data(paddle_result, related_bboxes, cropped_image)
 
+        passport_data["passport_type"] = passport_type
+
         return passport_data
     
     def extract_internal_passport_data(self, paddle_result: dict, related_bboxes: list, image):
@@ -245,6 +247,7 @@ class PassportRecognitor:
         output_dict["passport_department_code"] = department_code
 
         output_dict["passport_authority"] = authority
+        output_dict["passport_mrz"] = mrz_first_line + "\n" + mrz_second_line
 
         return output_dict
     
@@ -588,8 +591,7 @@ class PassportRecognitor:
 
         output_dict["foreign_document_number"] = fields.document_number
 
-        output_dict["mrz_1"] = mrz_first_line
-        output_dict["mrz_2"] = mrz_second_line
+        output_dict["foreign_mrz"] = f"{mrz_first_line}\n{mrz_second_line}"
 
         return output_dict
 
