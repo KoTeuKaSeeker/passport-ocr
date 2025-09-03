@@ -6,11 +6,16 @@ if __name__ == "__main__":
     passport_recognitor = PassportRecognitor()
 
     paths = [
-        "data/dataset/6.jpg",
-        "data/images/sasha_2.jpg",
-        "data/images/danil.jpg",
-        "data/dataset/24.jpg",
-        "data/images/2.jpg"
+        # "data/dataset/6.jpg",
+        # "data/images/sasha_2.jpg",
+        # "data/images/danil.jpg",
+        # "data/dataset/24.jpg",
+        # "data/images/2.jpg"
+        # "data/2312660261.jpg",
+
+        # "data/sasha_complex/photo_7_2025-09-03_17-48-53.jpg",
+        # "data/sasha_complex/photo_5_2025-09-03_17-48-53.jpg",
+        "data/sasha_complex/photo_4_2025-09-03_17-48-53.jpg",
         ]
     
     for path in paths:

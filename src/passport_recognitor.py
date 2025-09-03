@@ -117,7 +117,7 @@ class PassportRecognitor:
             passport_data = self.extract_internal_passport_data(paddle_result, related_bboxes, cropped_image)
         else:
             # passport_data = "Can't extract data from foreign passports yet."
-            passport_data = self.extract_foreign_passport_data(paddle_result)
+            passport_data = self.extract_foreign_passport_data(paddle_result, related_bboxes, cropped_image)
 
         return passport_data
     
@@ -126,6 +126,9 @@ class PassportRecognitor:
             (idx for idx, text in enumerate(paddle_result[0]["rec_texts"]) if text.endswith("<<<")),
             None  # fallback if not found
         )
+
+        if mrz_first_line_id == None:
+            return {"error": "Couldn't find first mrz line"}
 
         mrz_second_line_id = next(
             (
@@ -136,12 +139,18 @@ class PassportRecognitor:
             None  # fallback if not found
         )
 
+        if mrz_second_line_id == None:
+            return {"error": "Couldn't find second mrz line"}
+
         mrz_first_line = paddle_result[0]["rec_texts"][mrz_first_line_id]
         mrz_second_line = paddle_result[0]["rec_texts"][mrz_second_line_id]
 
         mrz_first_line_id_box = related_bboxes[mrz_first_line_id]
 
-        td3_check = TD3CodeChecker(mrz_first_line + "\n" + mrz_second_line)
+        try:
+            td3_check = TD3CodeChecker(mrz_first_line + "\n" + mrz_second_line)
+        except Exception as e:
+            return {"error": e}
 
         fields = td3_check.fields()
 
@@ -501,7 +510,7 @@ class PassportRecognitor:
 
         return found_idx
     
-    def extract_foreign_passport_data(self, paddle_result: dict):
+    def extract_foreign_passport_data(self, paddle_result: dict, related_bboxes: list, image):
         # mrz_first_line = paddle_result[0]["rec_texts"][-2]
         # mrz_second_line = paddle_result[0]["rec_texts"][-1]
         mrz_first_line = next((text for text in paddle_result[0]["rec_texts"] if text.endswith("<<<")), None)
