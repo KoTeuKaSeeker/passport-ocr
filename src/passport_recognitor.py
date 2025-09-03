@@ -104,6 +104,13 @@ class PassportRecognitor:
 
         cropped_image, related_bboxes = self.image_preprocessor.rotate_and_crop(image, paddle_result)
 
+        for bbox in related_bboxes:
+            cv2.rectangle(cropped_image, bbox[0].astype(int), bbox[1].astype(int), (0, 0, 255), 3)
+            cv2.circle(cropped_image, bbox[0].astype(int), 3, (255, 0, 0))
+            cv2.circle(cropped_image, bbox[1].astype(int), 3, (0, 255, 0))
+        cv2.imwrite("output.png", cropped_image)
+
+
         for res in paddle_result:
             res.print()
             res.save_to_img("output")
@@ -128,7 +135,7 @@ class PassportRecognitor:
         )
 
         if mrz_first_line_id == None:
-            return {"error": "Couldn't find first mrz line"}
+            return {"error": "Couldn't find first MRZ line"}
 
         mrz_second_line_id = next(
             (
@@ -140,17 +147,17 @@ class PassportRecognitor:
         )
 
         if mrz_second_line_id == None:
-            return {"error": "Couldn't find second mrz line"}
+            return {"error": "Couldn't find second MRZ line"}
 
-        mrz_first_line = paddle_result[0]["rec_texts"][mrz_first_line_id]
-        mrz_second_line = paddle_result[0]["rec_texts"][mrz_second_line_id]
+        mrz_first_line = paddle_result[0]["rec_texts"][mrz_first_line_id] # len = 44
+        mrz_second_line = paddle_result[0]["rec_texts"][mrz_second_line_id] # len = 44
 
         mrz_first_line_id_box = related_bboxes[mrz_first_line_id]
 
         try:
             td3_check = TD3CodeChecker(mrz_first_line + "\n" + mrz_second_line)
         except Exception as e:
-            return {"error": e}
+            return {"error": "MRZ parsing failed"}
 
         fields = td3_check.fields()
 
@@ -189,19 +196,22 @@ class PassportRecognitor:
 
         max_score_id = np.argmax(rus_fed_scores)
 
+        chosen_id = russian_id
         authority_search_start_point = np.array(related_bboxes[russian_id][1]).astype(int)
         if max_score_id == 1:
             fed_bbox = related_bboxes[federation_id]
             authority_search_start_point = np.array([fed_bbox[0][0], fed_bbox[1][1]]).astype(int)
+            chosen_id = federation_id
         elif max_score_id == 2:
             rus_fed_bbox = related_bboxes[russian_federation_id]
             mean_x = (rus_fed_bbox[0][0] + rus_fed_bbox[1][0]) / 2
             authority_search_start_point = np.array([mean_x, rus_fed_bbox[1][1]]).astype(int)
+            chosen_id = russian_federation_id
             
 
         authority_first_line_id = self.find_bboxes_below_point(authority_search_start_point, 
                                             related_bboxes,
-                                            ignore_indices=[russian_id])[0]
+                                            ignore_indices=[chosen_id])[0]
         
         authority_bbox_ids = self.find_bboxes_below_between(authority_first_line_id, 
                                                             related_bboxes, 
@@ -351,23 +361,9 @@ class PassportRecognitor:
         include_touching: bool = True
     ) -> List[int]:
         """
-        Return list of bbox indices that are below the source bbox and (if y_border is provided)
-        are above that horizontal y_border.
-
-        Args:
-            source_bbox_id: index of the source bbox in `bboxes`.
-            bboxes: list of bboxes, each bbox = [[x_min, y_min], [x_max, y_max]].
-            y_border: optional y coordinate of a horizontal border. If provided, returned bboxes
-                    must be above this border (i.e., have top y <= y_border under the top-left origin).
-            require_horizontal_overlap: if True (default) candidate must horizontally overlap source.
-            include_touching: if True (default) touching counts as valid (>= / <=), otherwise strict (> / <).
-
-        Returns:
-            List[int] of matching bbox indices sorted by vertical gap (closest first).
-            Returns empty list if none match.
-
-        Raises:
-            IndexError if source_bbox_id is out of range.
+        Return indices of bboxes that are entirely below the source bbox (not inside or above).
+        Assumes bbox format: bbox = [[x_min, y_min], [x_max, y_max]] (top-left at index 0, bottom-right at index 1).
+        include_touching=True allows candidate top == source bottom (touching); otherwise strict >.
         """
         if not (0 <= source_bbox_id < len(bboxes)):
             raise IndexError("source_bbox_id out of range")
@@ -376,23 +372,29 @@ class PassportRecognitor:
         sx_max, sy_max = bboxes[source_bbox_id][1]
         s_center_x = (sx_min + sx_max) / 2.0
 
+        eps = 1e-9
         results = []
+
         for i, bbox in enumerate(bboxes):
             if i == source_bbox_id:
                 continue
 
-            cx_min, cy_min = bbox[0]
-            cx_max, cy_max = bbox[1]
+            cx_min, cy_min = bbox[0]   # candidate top (y_min)
+            cx_max, cy_max = bbox[1]   # candidate bottom (y_max)
 
-            # check "below" (candidate's top is below source bottom)
+            # --- must be entirely below source ---
             if include_touching:
-                if cy_min < sy_max:
+                # allow touching: candidate top may equal source bottom
+                if cy_min + eps < sy_max:
+                    # candidate's top is above source bottom -> inside/overlapping/above -> skip
                     continue
             else:
-                if cy_min <= sy_max:
+                # require strictly below
+                if cy_min - eps <= sy_max:
                     continue
 
-            # if y_border given, candidate must be above that border
+            # if y_border provided: keep only candidates above that border
+            # (i.e., candidate top <= y_border under top-left origin)
             if y_border is not None:
                 if include_touching:
                     if cy_min > y_border:
@@ -406,7 +408,7 @@ class PassportRecognitor:
             if require_horizontal_overlap and overlap <= 0:
                 continue
 
-            vertical_gap = cy_min - sy_max  # >= 0 if below (or >0 when not touching)
+            vertical_gap = cy_min - sy_max  # >= 0 when below (0 if touching allowed)
             center_dist = abs(((cx_min + cx_max) / 2.0) - s_center_x)
 
             results.append((i, vertical_gap, overlap, center_dist))
@@ -415,6 +417,10 @@ class PassportRecognitor:
         results.sort(key=lambda t: (t[1], -t[2], t[3]))
 
         return [t[0] for t in results]
+
+
+
+
     
     def find_bboxes_below_point(
         self,
@@ -426,26 +432,10 @@ class PassportRecognitor:
         limit: Optional[int] = None,
         ignore_indices: Optional[Iterable[int]] = None
     ) -> List[int]:
-        """
-        Return indices of bboxes that lie below a given point (x,y), respecting horizontal position.
-
-        Args:
-            point: (x, y) coordinate.
-            bboxes: list of bboxes where each bbox = [[x_min, y_min], [x_max, y_max]].
-            horizontal_tolerance: allowed horizontal distance (in px) from point to bbox if the
-                                point is not strictly inside bbox. 0.0 (default) means the bbox
-                                must contain the point's x coordinate.
-            include_touching: if True, a bbox whose top y == point_y counts as "below".
-            max_distance: optional maximum vertical distance (in px) to consider.
-            limit: optional maximum number of results to return (closest first).
-            ignore_indices: optional iterable of bbox indices to ignore/skip.
-
-        Returns:
-            List of bbox indices sorted by (vertical gap ascending, horizontal distance ascending).
-        """
         px, py = point
         ignore_set = set(ignore_indices) if ignore_indices is not None else set()
         results = []
+        eps = 1e-9
 
         for i, bbox in enumerate(bboxes):
             if i in ignore_set:
@@ -454,13 +444,27 @@ class PassportRecognitor:
             x_min, y_min = bbox[0]
             x_max, y_max = bbox[1]
 
-            # vertical check: candidate top relative to point
-            vertical_gap = y_min - py
-            if include_touching:
-                if vertical_gap < 0:
+            # raw vertical difference between candidate top and the point
+            vertical_gap_raw = y_min - py
+
+            # Decide acceptance + compute vertical_gap (non-negative)
+            if vertical_gap_raw > eps:
+                # candidate top is strictly below the point -> OK
+                vertical_gap = vertical_gap_raw
+            elif abs(vertical_gap_raw) <= eps:
+                # candidate top == point y (touching at top)
+                if not include_touching:
                     continue
+                vertical_gap = 0.0
             else:
-                if vertical_gap <= 0:
+                # vertical_gap_raw < 0: candidate top is above the point
+                # it may still *contain* the point (y_min < py <= y_max)
+                # -> treat as gap = 0 (accepted). Otherwise it's above the point -> skip.
+                if py <= y_max + eps:
+                    # point is inside the bbox vertically (or on bottom edge) -> accept with gap 0
+                    vertical_gap = 0.0
+                else:
+                    # point is below the bbox entirely -> exclude
                     continue
 
             # horizontal distance: 0 if point is inside [x_min, x_max], otherwise distance to nearest edge
