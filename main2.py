@@ -15,7 +15,10 @@ if __name__ == "__main__":
 
         # "data/sasha_complex/photo_7_2025-09-03_17-48-53.jpg",
         # "data/sasha_complex/photo_5_2025-09-03_17-48-53.jpg",
-        "data/sasha_complex/photo_4_2025-09-03_17-48-53.jpg",
+        # "data/sasha_complex/photo_4_2025-09-03_17-48-53.jpg",
+        # "data/sasha_simple/5.jpg",
+        # "data/danil_simple/4.jpg",
+        "data/danil_simple/7.jpg"
         ]
     
     for path in paths:

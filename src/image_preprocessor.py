@@ -24,6 +24,11 @@ class ImagePreprocessor:
 
         related_bboxes = self.get_related_boxes(all_rotated, rotated_corners[0])
 
+        # IT SHOULDN'T BE THIS WAY! DON'T FORGET TO FIX IT!
+        for idx, bbox in enumerate(related_bboxes):
+            related_bboxes[idx][0][1], related_bboxes[idx][1][1] = related_bboxes[idx][1][1], related_bboxes[idx][0][1]
+
+
         cropped = self.crop_rotated_rect_perspective(image, crop_points)
 
         return cropped, related_bboxes
